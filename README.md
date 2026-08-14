@@ -1,12 +1,45 @@
-# TinySD Studio
+# TinySD Studio Android application
 
-TinySD Studio is the starter Android application for the Arm Learning Path that runs an optimized TinySD ExecuTorch model on an Arm64 Android emulator.
+This example application accompanies an Arm Learning Path for running generative AI models from the Arm AI Portal. It is intended for learning how optimized models run on devices and is not a reference production application.
 
-The model is not included in this project. Build and run the app, create
-`tinysd_vivo_executorch.zip` with the supplied downloader, copy it to the Android
-`Downloads` directory, then select **Import TinySD model** in the app.
+TinySD Studio runs an Arm-optimized TinySD text-to-image model locally on an Arm64 Android phone or emulator. It uses ExecuTorch with XNNPACK to generate a 512 × 512 image from a text prompt. The prompt and generated image remain on the Android device.
 
-Create a Python environment and install the Hugging Face Hub package:
+The application imports the model artifacts at run time, so the approximately 1 GB ExecuTorch program is not stored in the Android application package (APK).
+
+## Application views
+
+<p align="center">
+  <img src="images/tinysd-startup.png" width="31%" alt="TinySD Studio before the model archive has been imported">
+  <img src="images/tinysd-model-ready.png" width="31%" alt="TinySD Studio ready to generate an image from a prompt and seed">
+  <img src="images/tinysd-generated-image.png" width="31%" alt="TinySD Studio displaying an image generated locally on Android">
+</p>
+
+The application imports the optimized model bundle, accepts a prompt and variation seed, reports generation progress and elapsed time, and saves the generated image through Android's document picker.
+
+## Requirements
+
+- Android Studio with Android SDK 35
+- Java 17, supplied by Android Studio
+- An Arm64 Android device running Android 9, API level 28, or later
+- At least 7 GB of memory exposed to the application; configure an Android Virtual Device (AVD) with 8192 MB of RAM
+- At least 3 GB of available storage while downloading and importing the model
+- Python 3 and the `huggingface_hub` package for the supplied model downloader
+
+An x86-64 Android emulator cannot run this Arm64-only application. Use a physical Arm64 phone when developing on an Intel or AMD computer.
+
+## Supported model
+
+| Model | Runtime | Hugging Face repository | Import this file |
+| --- | --- | --- | --- |
+| TinySD INT8 | ExecuTorch with XNNPACK | [`Arm/tiny-sd-int8-xnnpack-executorch-vivo-x300`](https://huggingface.co/Arm/tiny-sd-int8-xnnpack-executorch-vivo-x300) | `tinysd_vivo_executorch.zip` |
+
+The repository contains both INT8 and FP32 ExecuTorch programs. The downloader packages only the smaller INT8 program and its required tokenizer and scheduler data for this application.
+
+## Download and package the model
+
+Create a Python virtual environment and install the Hugging Face Hub package.
+
+On macOS or Linux:
 
 ```bash
 python3 -m venv .hf-venv
@@ -14,21 +47,96 @@ source .hf-venv/bin/activate
 python -m pip install --upgrade huggingface_hub
 ```
 
-Download the required model artifacts and package them in the uncompressed ZIP
-layout expected by the Android importer:
+On Windows PowerShell:
+
+```powershell
+py -m venv .hf-venv
+.\.hf-venv\Scripts\Activate.ps1
+python -m pip install --upgrade huggingface_hub
+```
+
+Run the included downloader from the repository root. The `--print-path` option returns the generated archive path for later commands.
+
+On macOS or Linux:
 
 ```bash
+MODEL_ID="Arm/tiny-sd-int8-xnnpack-executorch-vivo-x300"
 MODEL_FILE="$(python download_model.py \
-  --repo-id Arm/tiny-sd-int8-xnnpack-executorch-vivo-x300 \
+  --repo-id "$MODEL_ID" \
   --print-path)"
+
+printf 'Model archive: %s\n' "$MODEL_FILE"
 ```
 
-If the Hugging Face repository is private, authenticate first with `hf auth login`.
+On Windows PowerShell:
 
-The terminal installer remains available as an alternative:
+```powershell
+$MODEL_ID = "Arm/tiny-sd-int8-xnnpack-executorch-vivo-x300"
+$MODEL_FILE = python download_model.py `
+  --repo-id "$MODEL_ID" `
+  --print-path
 
-```bash
-./scripts/install_model.sh /path/to/tinysd_vivo_executorch.zip
+Write-Output "Model archive: $MODEL_FILE"
 ```
 
-The application expects an Arm64 Android emulator with at least 8 GB of RAM. It tokenizes free-text prompts with the model's CLIP tokenizer, loads `optimized.pte` with memory mapping, runs the `text_encoder`, `unet`, and `vae_decoder` methods, displays the generated 512 × 512 bitmap, and saves the result as PNG through Android's document picker.
+If the Hugging Face repository requires authentication, sign in and repeat the download:
+
+```console
+hf auth login
+```
+
+The downloader retrieves only these files:
+
+| Repository file | Application role |
+| --- | --- |
+| `tiny-sd-int8-executorch.pte` | Multimethod ExecuTorch program containing `text_encoder`, `unet`, and `vae_decoder` |
+| `schedule_data.json` | Constants for the 25-step DPM-Solver++ denoising loop |
+| `tokenizer/tokenizer.json` | CLIP vocabulary and byte-pair encoding rules |
+
+It packages them as `downloads/tinysd_vivo_executorch.zip` using the entry names and uncompressed ZIP format required by the Android importer.
+
+Copy the archive to the Android **Downloads** directory through ADB:
+
+```console
+adb push "$MODEL_FILE" /sdcard/Download/tinysd_vivo_executorch.zip
+```
+
+You can instead use Android Studio's **Device Explorer** to upload the archive to `/sdcard/Download/`.
+
+## Open and run the application
+
+1. Clone or download this repository.
+2. Open the repository root in Android Studio.
+3. Wait for Gradle sync to finish.
+4. Connect an Arm64 Android phone or start a compatible Arm64 AVD.
+5. Select the `app` configuration and run it.
+6. Select **Import TinySD model** and choose `tinysd_vivo_executorch.zip` from **Downloads**.
+7. Wait until the application reports **Model ready**.
+8. Enter a text prompt and a whole-number variation seed.
+9. Select **Generate image**.
+10. Select **Save image** to save the generated PNG through Android's document picker.
+
+The seed controls the initial random noise. Reusing the same model, prompt, and seed reproduces the same image. Change the seed to create another variation of the prompt.
+
+The application extracts the required artifacts into its private app-specific storage. Clearing the application data or uninstalling the application removes the imported model. The original ZIP remains in the Android **Downloads** directory.
+
+## Application structure
+
+- `MainActivity.java` provides model import, prompt and seed controls, progress reporting, image display, and image saving.
+- `ModelImporter.java` validates the ZIP layout and checksums before replacing the current model files.
+- `ClipTokenizer.java` converts the prompt into the CLIP token sequence used by the text encoder.
+- `ScheduleData.java` loads the exported denoising constants.
+- `TinySdRunner.java` loads the `.pte` program with memory mapping and runs the text encoder, denoising loop, and VAE decoder.
+- `download_model.py` downloads only the required Hugging Face artifacts and creates the import archive.
+
+TinySD is exported as one multimethod ExecuTorch program. `TinySdRunner` calls `text_encoder` for the prompt and unconditional input, calls `unet` for conditioned and unconditioned predictions during each denoising step, and calls `vae_decoder` to create the final RGB image.
+
+## Use another model package
+
+Another model package can use this application only if it matches the same tokenizer, scheduler data, method names, tensor shapes, data types, and output contract. Update `download_model.py` when the repository filenames or archive layout differ.
+
+Create a separate runner or application integration when a model changes the callable methods, tensor contract, tokenizer, scheduler, image dimensions, runtime, or user controls. Rebuild and test the APK on an Arm64 Android device after changing the integration.
+
+## License
+
+This project is provided under the [Arm Education End User License Agreement](LICENSE.md).

@@ -36,6 +36,8 @@ An x86-64 Android emulator cannot run this Arm64-only application. Use a physica
 
 The repository contains both INT8 and FP32 ExecuTorch programs. The downloader packages only the smaller INT8 program and its required tokenizer and scheduler data for this application.
 
+The application registers this package through `CompatibleModelRegistry.java` and runs it through the supplied `TinySdImageGenerationAdapter.java` adapter.
+
 ## Download and package the model
 
 Create a Python virtual environment and install the Hugging Face Hub package.
@@ -123,20 +125,27 @@ The application extracts the required artifacts into its private app-specific st
 
 ## Application structure
 
-- `MainActivity.java` provides model import, prompt and seed controls, progress reporting, image display, and image saving.
-- `ModelImporter.java` validates the ZIP layout and checksums before replacing the current model files.
+`MainActivity.java` connects the Android document picker, prompt and seed controls, model status, generation progress, generated image, and save action. It selects the model descriptor from `CompatibleModelRegistry.models()` and obtains the matching compiled adapter from `AdapterRegistry.java`. Model import and generation run on a background executor so the Android user interface remains responsive.
+
+The application currently supplies one adapter:
+
+- `TinySdImageGenerationAdapter.java` provides the TinySD ExecuTorch image-generation workflow. It owns package readiness and import, tokenizer and runner initialization, generation, progress callbacks, and model cleanup.
+
+The remaining files separate the reusable application structure from the TinySD implementation:
+
+- `ImageGenerationAdapter.java` defines the application-facing contract for model readiness, import, generation, and cleanup.
+- `ModelDescriptor.java` describes a supported package, including its model ID, adapter ID, archive name, runtime, storage directory, memory requirement, and required files.
+- `CompatibleModelRegistry.java` declares the model packages supported by the application. It currently contains one TinySD INT8 descriptor.
+- `AdapterRegistry.java` registers the adapters compiled into the APK and resolves a descriptor's adapter ID.
+- `ModelImporter.java` checks the required ZIP entries, sizes, and checksums in a staging directory before replacing the installed model files.
 - `ClipTokenizer.java` converts the prompt into the CLIP token sequence used by the text encoder.
 - `ScheduleData.java` loads the exported denoising constants.
-- `TinySdRunner.java` loads the `.pte` program with memory mapping and runs the text encoder, denoising loop, and VAE decoder.
+- `TinySdRunner.java` memory-maps the `.pte` program and runs the text encoder, denoising loop, and VAE decoder.
 - `download_model.py` downloads only the required Hugging Face artifacts and creates the import archive.
 
+The expected archive filename is displayed by the application and produced by `download_model.py`. The importer accepts an archive based on its required entries and checksums, rather than its selected filename. The ExecuTorch method contract is checked when the model is first loaded for generation.
+
 TinySD is exported as one multimethod ExecuTorch program. `TinySdRunner` calls `text_encoder` for the prompt and unconditional input, calls `unet` for conditioned and unconditioned predictions during each denoising step, and calls `vae_decoder` to create the final RGB image.
-
-## Use another model package
-
-Another model package can use this application only if it matches the same tokenizer, scheduler data, method names, tensor shapes, data types, and output contract. Update `download_model.py` when the repository filenames or archive layout differ.
-
-Create a separate runner or application integration when a model changes the callable methods, tensor contract, tokenizer, scheduler, image dimensions, runtime, or user controls. Rebuild and test the APK on an Arm64 Android device after changing the integration.
 
 ## License
 

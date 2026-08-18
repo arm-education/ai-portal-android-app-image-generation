@@ -18,7 +18,6 @@ import android.widget.ProgressBar;
 import android.widget.ScrollView;
 import android.widget.TextView;
 
-import java.io.File;
 import java.io.OutputStream;
 import java.text.SimpleDateFormat;
 import java.util.Date;
@@ -29,15 +28,12 @@ import java.util.concurrent.Executors;
 public final class MainActivity extends Activity {
     private static final int MODEL_ARCHIVE_REQUEST = 1001;
     private static final int SAVE_IMAGE_REQUEST = 1002;
-    private static final long MINIMUM_RAM_BYTES = 7L * 1024 * 1024 * 1024;
-    private static final String MODEL_NAME = "optimized.pte";
-    private static final String SCHEDULE_NAME = "schedule_data.json";
 
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
 
-    private File modelDirectory;
-    private TinySdRunner runner;
-    private ClipTokenizer tokenizer;
+    private AdapterRegistry adapterRegistry;
+    private ImageGenerationAdapter generationAdapter;
+    private ModelDescriptor modelDescriptor;
     private EditText promptInput;
     private EditText seedInput;
     private Button generateButton;
@@ -58,16 +54,21 @@ public final class MainActivity extends Activity {
     private boolean modelReady;
     private long deviceMemoryBytes;
     private boolean memoryReady;
+    private volatile boolean destroyed;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
 
-        File externalFiles = getExternalFilesDir(null);
-        modelDirectory = new File(externalFiles != null ? externalFiles : getFilesDir(), "tinysd");
+        adapterRegistry = new AdapterRegistry(this);
+        if (CompatibleModelRegistry.models().isEmpty()) {
+            throw new IllegalStateException("No compatible image-generation model is registered");
+        }
+        modelDescriptor = CompatibleModelRegistry.models().get(0);
+        generationAdapter = adapterRegistry.requireAdapter(modelDescriptor.adapterId());
         deviceMemoryBytes = readDeviceMemoryBytes();
-        memoryReady = deviceMemoryBytes >= MINIMUM_RAM_BYTES;
+        memoryReady = deviceMemoryBytes >= modelDescriptor.minimumMemoryBytes();
 
         setContentView(R.layout.activity_main);
         bindContent();
@@ -93,6 +94,9 @@ public final class MainActivity extends Activity {
         resultCaption = findViewById(R.id.result_caption);
         resultMeta = findViewById(R.id.result_meta);
         resultFooter = findViewById(R.id.result_footer);
+        resultFooter.setText(
+                modelDescriptor.outputDescription() + "  •  " + modelDescriptor.runtimeName()
+        );
         imageView = findViewById(R.id.image_view);
         imageView.setClipToOutline(true);
 
@@ -222,18 +226,20 @@ public final class MainActivity extends Activity {
         setImporting(true);
         progressBar.setMax(100);
         progressBar.setProgress(0);
-        statusView.setText("Checking the TinySD archive…");
+        statusView.setText("Checking the " + modelDescriptor.displayName() + " archive…");
         if (generatedBitmap == null) {
-            resultCaption.setText("Checking and installing the TinySD model on this device…");
+            resultCaption.setText(
+                    "Checking and installing the " + modelDescriptor.displayName()
+                            + " model on this device…"
+            );
         }
 
         executor.submit(() -> {
             try {
-                ModelImporter.importArchive(
-                        getContentResolver(),
+                generationAdapter.importModel(
+                        modelDescriptor,
                         archiveUri,
-                        modelDirectory,
-                        (message, percent) -> runOnUiThread(() -> {
+                        (message, percent) -> postToUi(() -> {
                             progressBar.setProgress(percent);
                             statusView.setText(message);
                             if (generatedBitmap == null) {
@@ -241,14 +247,12 @@ public final class MainActivity extends Activity {
                             }
                         })
                 );
-                runOnUiThread(() -> {
-                    resetModelRuntime();
+                postToUi(() -> {
                     setImporting(false);
                     updateModelState();
                 });
             } catch (Throwable error) {
-                runOnUiThread(() -> {
-                    resetModelRuntime();
+                postToUi(() -> {
                     setImporting(false);
                     progressBar.setProgress(0);
                     updateModelState();
@@ -299,14 +303,14 @@ public final class MainActivity extends Activity {
                     throw new IllegalStateException("Could not encode the image as PNG");
                 }
                 output.flush();
-                runOnUiThread(() -> {
+                postToUi(() -> {
                     setSaving(false);
                     statusView.setText(
                             "Image saved. Choose another prompt or seed to create a variation."
                     );
                 });
             } catch (Throwable error) {
-                runOnUiThread(() -> {
+                postToUi(() -> {
                     setSaving(false);
                     statusView.setText(
                             "Save failed: " + error.getClass().getSimpleName()
@@ -324,10 +328,7 @@ public final class MainActivity extends Activity {
             return;
         }
 
-        File modelFile = new File(modelDirectory, MODEL_NAME);
-        File scheduleFile = new File(modelDirectory, SCHEDULE_NAME);
-        File tokenizerFile = new File(modelDirectory, "tokenizer.json");
-        if (!modelFile.isFile() || !scheduleFile.isFile() || !tokenizerFile.isFile()) {
+        if (!generationAdapter.isModelReady(modelDescriptor)) {
             updateModelState();
             return;
         }
@@ -349,24 +350,18 @@ public final class MainActivity extends Activity {
         setGenerating(true);
         clearGeneratedImage();
         progressBar.setProgress(0);
-        statusView.setText("Loading the tokenizer and TinySD model…");
-        resultCaption.setText("Loading the tokenizer and TinySD model…");
+        String loadingMessage = "Loading the tokenizer and "
+                + modelDescriptor.displayName() + " model…";
+        statusView.setText(loadingMessage);
+        resultCaption.setText(loadingMessage);
 
         executor.submit(() -> {
             try {
-                if (runner == null) {
-                    runner = new TinySdRunner(modelFile, scheduleFile);
-                }
-                if (tokenizer == null) {
-                    tokenizer = new ClipTokenizer(tokenizerFile);
-                }
-                long[] promptTokens = tokenizer.encode(promptText);
-                long[] unconditionalTokens = tokenizer.encode("");
-                TinySdRunner.GenerationResult result = runner.generate(
-                        promptTokens,
-                        unconditionalTokens,
+                ImageGenerationAdapter.GenerationResult result = generationAdapter.generate(
+                        modelDescriptor,
+                        promptText,
                         seed,
-                        (message, completed, total) -> runOnUiThread(() -> {
+                        (message, completed, total) -> postToUi(() -> {
                             progressBar.setMax(total);
                             progressBar.setProgress(completed);
                             statusView.setText(message);
@@ -374,6 +369,12 @@ public final class MainActivity extends Activity {
                         })
                 );
                 runOnUiThread(() -> {
+                    if (destroyed) {
+                        if (result.bitmap != null && !result.bitmap.isRecycled()) {
+                            result.bitmap.recycle();
+                        }
+                        return;
+                    }
                     generatedBitmap = result.bitmap;
                     imageView.setImageBitmap(result.bitmap);
                     resultCaption.setText(promptText);
@@ -392,11 +393,11 @@ public final class MainActivity extends Activity {
                     );
                 });
             } catch (OutOfMemoryError error) {
-                runOnUiThread(() -> showFailure(
+                postToUi(() -> showFailure(
                         "The emulator ran out of memory. Stop it, increase AVD RAM to 8 GB, and try again."
                 ));
             } catch (Throwable error) {
-                runOnUiThread(() -> showFailure(
+                postToUi(() -> showFailure(
                         "Generation failed: " + error.getClass().getSimpleName()
                                 + ": " + error.getMessage()
                 ));
@@ -405,23 +406,26 @@ public final class MainActivity extends Activity {
     }
 
     private void updateModelState() {
-        modelReady = hasModelFiles();
+        modelReady = generationAdapter.isModelReady(modelDescriptor);
         importButton.setText(R.string.import_model);
 
         if (modelReady) {
-            modelStatus.setText(memoryReady ? "TinySD is ready" : "More device memory needed");
+            modelStatus.setText(memoryReady
+                    ? modelDescriptor.displayName() + " is ready"
+                    : "More device memory needed");
             statusView.setText(memoryReady
                     ? "Model ready. Enter a prompt and generate an image."
                     : memoryWarning());
         } else {
             modelStatus.setText(R.string.model_setup_needed);
-            statusView.setText("Add tinysd_vivo_executorch.zip to continue.");
+            statusView.setText("Add " + modelDescriptor.archiveFileName() + " to continue.");
         }
 
         if (!hasGeneratedImage() && !generating && !importing) {
             if (modelReady && memoryReady) {
                 resultCaption.setText(
-                        "TinySD is ready. Enter a prompt and generate your first image."
+                        modelDescriptor.displayName()
+                                + " is ready. Enter a prompt and generate your first image."
                 );
             } else if (modelReady) {
                 resultCaption.setText(memoryWarning());
@@ -432,12 +436,6 @@ public final class MainActivity extends Activity {
         applyControlState();
     }
 
-    private boolean hasModelFiles() {
-        return new File(modelDirectory, MODEL_NAME).isFile()
-                && new File(modelDirectory, SCHEDULE_NAME).isFile()
-                && new File(modelDirectory, "tokenizer.json").isFile();
-    }
-
     private void showFailure(String message) {
         statusView.setText(message);
         resultCaption.setText(message);
@@ -445,6 +443,14 @@ public final class MainActivity extends Activity {
         resultFooter.setVisibility(View.GONE);
         resultCard.setVisibility(View.GONE);
         setGenerating(false);
+    }
+
+    private void postToUi(Runnable action) {
+        runOnUiThread(() -> {
+            if (!destroyed) {
+                action.run();
+            }
+        });
     }
 
     private void setGenerating(boolean value) {
@@ -502,14 +508,6 @@ public final class MainActivity extends Activity {
         applyControlState();
     }
 
-    private void resetModelRuntime() {
-        if (runner != null) {
-            runner.close();
-            runner = null;
-        }
-        tokenizer = null;
-    }
-
     private long readDeviceMemoryBytes() {
         ActivityManager activityManager = getSystemService(ActivityManager.class);
         if (activityManager == null) {
@@ -530,8 +528,12 @@ public final class MainActivity extends Activity {
 
     @Override
     protected void onDestroy() {
-        executor.shutdownNow();
-        resetModelRuntime();
+        destroyed = true;
+        if (adapterRegistry != null) {
+            // Queue cleanup after any active import, save, or native inference call.
+            executor.execute(adapterRegistry::close);
+        }
+        executor.shutdown();
         super.onDestroy();
     }
 }

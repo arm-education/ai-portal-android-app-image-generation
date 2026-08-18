@@ -1,4 +1,25 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">TinySD Studio</string>
+    <string name="hero_eyebrow">ON-DEVICE AI</string>
+    <string name="screen_title">What will you create?</string>
+    <string name="screen_description">Describe a scene and let your Arm-based device turn it into an image, privately.</string>
+    <string name="prompt_title">Your prompt</string>
+    <string name="prompt_helper">Include the scene, style, lighting, and details you want.</string>
+    <string name="prompt_hint">A watercolor lighthouse on a cliff at sunset</string>
+    <string name="seed_title">Variation seed</string>
+    <string name="seed_helper">Reuse a seed to repeat a result</string>
+    <string name="default_seed" translatable="false">42</string>
+    <string name="model_card_title">AI model</string>
+    <string name="model_setup_needed">Model setup needed</string>
+    <string name="model_not_installed">Add the TinySD ExecuTorch package to create images on this device.</string>
+    <string name="import_model">Add or change model</string>
+    <string name="generate_image">Generate image</string>
+    <string name="generated_image_title">Your image</string>
+    <string name="results_title">GENERATION STATUS</string>
+    <string name="initial_instructions">Add the TinySD model, enter a prompt, and generate your first image.</string>
+    <string name="selected_image">Image generated from your prompt</string>
+    <string name="save_image">Save image</string>
+    <string name="result_footer">512 × 512  •  ExecuTorch + XNNPACK</string>
+    <string name="privacy_note">Your prompt and image stay on this device.</string>
 </resources>

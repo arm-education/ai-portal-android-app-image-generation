@@ -9,9 +9,10 @@ The application imports the model artifacts at run time, so the approximately 1 
 ## Application views
 
 <p align="center">
-  <img src="images/tinysd-startup.png" width="31%" alt="TinySD Studio before the model archive has been imported">
-  <img src="images/tinysd-model-ready.png" width="31%" alt="TinySD Studio ready to generate an image from a prompt and seed">
-  <img src="images/tinysd-generated-image.png" width="31%" alt="TinySD Studio displaying an image generated locally on Android">
+  <img src="images/tinysd-startup.png" width="23%" alt="TinySD Studio before the model archive has been imported">
+  <img src="images/tinysd-model-ready.png" width="23%" alt="TinySD Studio ready to generate an image from a prompt and seed">
+  <img src="images/tinysd-generated-image-1.png" width="23%" alt="TinySD Studio displaying an image generated locally on Android">
+  <img src="images/tinysd-generated-image-2.png" width="23%" alt="TinySD Studio displaying an image generated locally on Android">
 </p>
 
 The application imports the optimized model bundle, accepts a prompt and variation seed, reports generation progress and elapsed time, and saves the generated image through Android's document picker.

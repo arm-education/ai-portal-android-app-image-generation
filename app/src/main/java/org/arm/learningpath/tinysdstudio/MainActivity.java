@@ -3,17 +3,12 @@ package org.arm.learningpath.tinysdstudio;
 import android.app.Activity;
 import android.app.ActivityManager;
 import android.content.Intent;
-import android.content.res.ColorStateList;
 import android.graphics.Bitmap;
-import android.graphics.Color;
-import android.graphics.Typeface;
-import android.graphics.drawable.GradientDrawable;
 import android.net.Uri;
+import android.os.Build;
 import android.os.Bundle;
-import android.text.InputType;
-import android.view.Gravity;
 import android.view.View;
-import android.view.ViewGroup;
+import android.view.WindowInsetsController;
 import android.view.WindowManager;
 import android.widget.Button;
 import android.widget.EditText;
@@ -37,13 +32,6 @@ public final class MainActivity extends Activity {
     private static final long MINIMUM_RAM_BYTES = 7L * 1024 * 1024 * 1024;
     private static final String MODEL_NAME = "optimized.pte";
     private static final String SCHEDULE_NAME = "schedule_data.json";
-    private static final int BACKGROUND = Color.rgb(246, 247, 251);
-    private static final int SURFACE = Color.WHITE;
-    private static final int PRIMARY = Color.rgb(104, 74, 255);
-    private static final int PRIMARY_DARK = Color.rgb(76, 51, 211);
-    private static final int TEXT = Color.rgb(36, 30, 48);
-    private static final int MUTED = Color.rgb(112, 104, 124);
-    private static final int BORDER = Color.rgb(229, 226, 236);
 
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
 
@@ -56,10 +44,12 @@ public final class MainActivity extends Activity {
     private Button importButton;
     private Button saveButton;
     private ProgressBar progressBar;
+    private TextView modelStatus;
     private TextView statusView;
     private LinearLayout resultCard;
     private TextView resultCaption;
     private TextView resultMeta;
+    private TextView resultFooter;
     private ImageView imageView;
     private Bitmap generatedBitmap;
     private boolean generating;
@@ -79,211 +69,109 @@ public final class MainActivity extends Activity {
         deviceMemoryBytes = readDeviceMemoryBytes();
         memoryReady = deviceMemoryBytes >= MINIMUM_RAM_BYTES;
 
-        setContentView(createContent());
+        setContentView(R.layout.activity_main);
+        bindContent();
         updateModelState();
     }
 
-    @Override
-    protected void onResume() {
-        super.onResume();
-        if (statusView != null && !generating && !importing && !saving) {
-            updateModelState();
-        }
+    private void bindContent() {
+        ScrollView screen = findViewById(R.id.screen);
+        View hero = findViewById(R.id.hero);
+        View body = findViewById(R.id.body);
+        applyWindowInsets(screen, hero, body);
+        applySystemBarAppearance();
+
+        promptInput = findViewById(R.id.prompt_input);
+        seedInput = findViewById(R.id.seed_input);
+        generateButton = findViewById(R.id.generate_button);
+        importButton = findViewById(R.id.import_button);
+        saveButton = findViewById(R.id.save_button);
+        progressBar = findViewById(R.id.progress_bar);
+        modelStatus = findViewById(R.id.model_status);
+        statusView = findViewById(R.id.status_view);
+        resultCard = findViewById(R.id.result_card);
+        resultCaption = findViewById(R.id.result_caption);
+        resultMeta = findViewById(R.id.result_meta);
+        resultFooter = findViewById(R.id.result_footer);
+        imageView = findViewById(R.id.image_view);
+        imageView.setClipToOutline(true);
+
+        generateButton.setOnClickListener(view -> startGeneration());
+        importButton.setOnClickListener(view -> openModelArchive());
+        saveButton.setOnClickListener(view -> openSaveImageDialog());
     }
 
-    private ScrollView createContent() {
-        ScrollView scrollView = new ScrollView(this);
-        scrollView.setFillViewport(true);
-        scrollView.setBackgroundColor(BACKGROUND);
-        scrollView.setClipToPadding(true);
-        scrollView.setOnApplyWindowInsetsListener((view, insets) -> {
+    private void applyWindowInsets(ScrollView screen, View hero, View body) {
+        int heroLeftPadding = hero.getPaddingLeft();
+        int heroTopPadding = hero.getPaddingTop();
+        int heroRightPadding = hero.getPaddingRight();
+        int heroBottomPadding = hero.getPaddingBottom();
+        int bodyLeftPadding = body.getPaddingLeft();
+        int bodyTopPadding = body.getPaddingTop();
+        int bodyRightPadding = body.getPaddingRight();
+        int bodyBottomPadding = body.getPaddingBottom();
+        screen.setOnApplyWindowInsetsListener((view, insets) -> {
             int topInset = Math.max(
                     insets.getSystemWindowInsetTop(),
                     insets.getStableInsetTop()
+            );
+            int leftInset = Math.max(
+                    insets.getSystemWindowInsetLeft(),
+                    insets.getStableInsetLeft()
+            );
+            int rightInset = Math.max(
+                    insets.getSystemWindowInsetRight(),
+                    insets.getStableInsetRight()
             );
             int bottomInset = Math.max(
                     insets.getSystemWindowInsetBottom(),
                     insets.getStableInsetBottom()
             );
-            view.setPadding(0, topInset, 0, bottomInset);
+            hero.setPadding(
+                    heroLeftPadding + leftInset,
+                    heroTopPadding + topInset,
+                    heroRightPadding + rightInset,
+                    heroBottomPadding
+            );
+            body.setPadding(
+                    bodyLeftPadding + leftInset,
+                    bodyTopPadding,
+                    bodyRightPadding + rightInset,
+                    bodyBottomPadding
+            );
+            view.setPadding(0, 0, 0, bottomInset);
             return insets;
         });
-
-        LinearLayout content = new LinearLayout(this);
-        content.setOrientation(LinearLayout.VERTICAL);
-        content.setPadding(dp(20), dp(18), dp(20), dp(40));
-        scrollView.addView(content, new ScrollView.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT
-        ));
-
-        content.addView(createHeader());
-        content.addView(createComposerCard(), matchWrap(dp(22)));
-        content.addView(createStatusCard(), matchWrap(dp(14)));
-
-        TextView feedLabel = label("YOUR CREATION");
-        feedLabel.setPadding(dp(4), 0, 0, 0);
-        content.addView(feedLabel, matchWrap(dp(24)));
-
-        resultCard = createResultCard();
-        resultCard.setVisibility(View.GONE);
-        content.addView(resultCard, matchWrap(dp(10)));
-
-        TextView privacy = text("Your prompt and image stay on this device.", 13, MUTED);
-        privacy.setGravity(Gravity.CENTER);
-        content.addView(privacy, matchWrap(dp(22)));
-
-        return scrollView;
+        screen.requestApplyInsets();
     }
 
-    private View createHeader() {
-        LinearLayout header = new LinearLayout(this);
-        header.setOrientation(LinearLayout.HORIZONTAL);
-        header.setGravity(Gravity.CENTER_VERTICAL);
+    @SuppressWarnings("deprecation")
+    private void applySystemBarAppearance() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            WindowInsetsController controller = getWindow().getInsetsController();
+            if (controller != null) {
+                controller.setSystemBarsAppearance(
+                        WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS,
+                        WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS
+                                | WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS
+                );
+            }
+            return;
+        }
 
-        TextView avatar = avatar("TS", PRIMARY, 46);
-        header.addView(avatar, new LinearLayout.LayoutParams(dp(46), dp(46)));
-
-        LinearLayout titles = new LinearLayout(this);
-        titles.setOrientation(LinearLayout.VERTICAL);
-        titles.setPadding(dp(12), 0, 0, 0);
-        LinearLayout.LayoutParams titleParams = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1);
-        header.addView(titles, titleParams);
-
-        TextView title = text("TinySD Studio", 23, TEXT);
-        title.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
-        titles.addView(title);
-
-        TextView subtitle = text("Create images on-device", 14, MUTED);
-        subtitle.setPadding(0, dp(2), 0, 0);
-        titles.addView(subtitle);
-
-        TextView localBadge = text("LOCAL AI", 11, PRIMARY_DARK);
-        localBadge.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
-        localBadge.setGravity(Gravity.CENTER);
-        localBadge.setPadding(dp(11), dp(7), dp(11), dp(7));
-        localBadge.setBackground(roundedDrawable(Color.rgb(237, 233, 255), 30, 0, Color.TRANSPARENT));
-        header.addView(localBadge);
-
-        return header;
+        View decorView = getWindow().getDecorView();
+        int systemUiVisibility = decorView.getSystemUiVisibility();
+        systemUiVisibility &= ~View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR;
+        systemUiVisibility |= View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR;
+        decorView.setSystemUiVisibility(systemUiVisibility);
     }
 
-    private LinearLayout createComposerCard() {
-        LinearLayout card = card();
-
-        TextView eyebrow = label("CREATE A POST");
-        card.addView(eyebrow);
-
-        TextView heading = text("What do you want to imagine?", 21, TEXT);
-        heading.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
-        card.addView(heading, matchWrap(dp(8)));
-
-        TextView description = text("Describe the scene, style, lighting, and details.", 14, MUTED);
-        description.setLineSpacing(0, 1.15f);
-        card.addView(description, matchWrap(dp(5)));
-
-        promptInput = new EditText(this);
-        promptInput.setHint("A watercolor lighthouse on a cliff at sunset");
-        promptInput.setHintTextColor(Color.rgb(154, 147, 164));
-        promptInput.setTextColor(TEXT);
-        promptInput.setTextSize(16);
-        promptInput.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_SENTENCES
-                | InputType.TYPE_TEXT_FLAG_MULTI_LINE);
-        promptInput.setMinLines(3);
-        promptInput.setMaxLines(5);
-        promptInput.setGravity(Gravity.TOP | Gravity.START);
-        promptInput.setPadding(dp(15), dp(13), dp(15), dp(13));
-        promptInput.setBackground(roundedDrawable(Color.rgb(250, 249, 252), 16, 1, BORDER));
-        card.addView(promptInput, matchWrap(dp(18)));
-
-        LinearLayout options = new LinearLayout(this);
-        options.setOrientation(LinearLayout.HORIZONTAL);
-        options.setGravity(Gravity.CENTER_VERTICAL);
-        card.addView(options, matchWrap(dp(14)));
-
-        LinearLayout seedText = new LinearLayout(this);
-        seedText.setOrientation(LinearLayout.VERTICAL);
-        options.addView(seedText, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
-
-        TextView seedLabel = text("Variation seed", 14, TEXT);
-        seedLabel.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
-        seedText.addView(seedLabel);
-        seedText.addView(text("Reuse a seed to repeat a result", 12, MUTED), matchWrap(dp(2)));
-
-        seedInput = new EditText(this);
-        seedInput.setInputType(InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_FLAG_SIGNED);
-        seedInput.setText("42");
-        seedInput.setTextColor(TEXT);
-        seedInput.setTextSize(15);
-        seedInput.setGravity(Gravity.CENTER);
-        seedInput.setSingleLine(true);
-        seedInput.setPadding(dp(8), dp(8), dp(8), dp(8));
-        seedInput.setBackground(roundedDrawable(Color.rgb(250, 249, 252), 24, 1, BORDER));
-        options.addView(seedInput, new LinearLayout.LayoutParams(dp(84), dp(44)));
-
-        generateButton = new Button(this);
-        generateButton.setText("Generate image");
-        generateButton.setTextColor(Color.WHITE);
-        generateButton.setTextSize(16);
-        generateButton.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
-        generateButton.setAllCaps(false);
-        generateButton.setGravity(Gravity.CENTER);
-        generateButton.setPadding(dp(16), 0, dp(16), 0);
-        generateButton.setBackground(roundedDrawable(PRIMARY, 18, 0, Color.TRANSPARENT));
-        generateButton.setOnClickListener(view -> startGeneration());
-        LinearLayout.LayoutParams buttonParams = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                dp(54)
-        );
-        buttonParams.topMargin = dp(20);
-        card.addView(generateButton, buttonParams);
-
-        return card;
-    }
-
-    private LinearLayout createStatusCard() {
-        LinearLayout card = card();
-        card.setPadding(dp(18), dp(15), dp(18), dp(15));
-
-        LinearLayout titleRow = new LinearLayout(this);
-        titleRow.setOrientation(LinearLayout.HORIZONTAL);
-        titleRow.setGravity(Gravity.CENTER_VERTICAL);
-        card.addView(titleRow);
-
-        TextView dot = text("•", 25, PRIMARY);
-        dot.setGravity(Gravity.CENTER);
-        titleRow.addView(dot, new LinearLayout.LayoutParams(dp(20), ViewGroup.LayoutParams.WRAP_CONTENT));
-
-        TextView title = text("On-device generation", 14, TEXT);
-        title.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
-        titleRow.addView(title);
-
-        progressBar = new ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal);
-        progressBar.setMax(27);
-        progressBar.setProgress(0);
-        progressBar.setProgressTintList(ColorStateList.valueOf(PRIMARY));
-        progressBar.setProgressBackgroundTintList(ColorStateList.valueOf(Color.rgb(232, 229, 240)));
-        card.addView(progressBar, matchWrap(dp(9)));
-
-        statusView = text("Checking model files…", 13, MUTED);
-        statusView.setLineSpacing(0, 1.15f);
-        card.addView(statusView, matchWrap(dp(7)));
-
-        importButton = new Button(this);
-        importButton.setText("Import TinySD model");
-        importButton.setTextColor(PRIMARY_DARK);
-        importButton.setTextSize(14);
-        importButton.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
-        importButton.setAllCaps(false);
-        importButton.setBackground(roundedDrawable(Color.rgb(245, 242, 255), 16, 1, Color.rgb(211, 202, 255)));
-        importButton.setOnClickListener(view -> openModelArchive());
-        LinearLayout.LayoutParams importParams = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                dp(48)
-        );
-        importParams.topMargin = dp(13);
-        card.addView(importButton, importParams);
-        return card;
+    @Override
+    protected void onResume() {
+        super.onResume();
+        if (statusView != null && !isBusy()) {
+            updateModelState();
+        }
     }
 
     private void openModelArchive() {
@@ -304,6 +192,7 @@ public final class MainActivity extends Activity {
         if (resultCode != RESULT_OK || data == null) {
             return;
         }
+
         Uri selectedUri = data.getData();
         if (requestCode == SAVE_IMAGE_REQUEST) {
             if (selectedUri != null) {
@@ -318,10 +207,12 @@ public final class MainActivity extends Activity {
             statusView.setText("No model archive was selected.");
             return;
         }
-        int permissionFlags = data.getFlags()
-                & (Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
+
         try {
-            getContentResolver().takePersistableUriPermission(selectedUri, permissionFlags);
+            getContentResolver().takePersistableUriPermission(
+                    selectedUri,
+                    Intent.FLAG_GRANT_READ_URI_PERMISSION
+            );
         } catch (SecurityException ignored) {
         }
         importModelArchive(selectedUri);
@@ -332,6 +223,9 @@ public final class MainActivity extends Activity {
         progressBar.setMax(100);
         progressBar.setProgress(0);
         statusView.setText("Checking the TinySD archive…");
+        if (generatedBitmap == null) {
+            resultCaption.setText("Checking and installing the TinySD model on this device…");
+        }
 
         executor.submit(() -> {
             try {
@@ -342,100 +236,43 @@ public final class MainActivity extends Activity {
                         (message, percent) -> runOnUiThread(() -> {
                             progressBar.setProgress(percent);
                             statusView.setText(message);
+                            if (generatedBitmap == null) {
+                                resultCaption.setText(message);
+                            }
                         })
                 );
                 runOnUiThread(() -> {
+                    resetModelRuntime();
                     setImporting(false);
                     updateModelState();
                 });
             } catch (Throwable error) {
                 runOnUiThread(() -> {
+                    resetModelRuntime();
                     setImporting(false);
                     progressBar.setProgress(0);
-                    statusView.setText(
-                            "Import failed: " + error.getClass().getSimpleName() + ": " + error.getMessage()
-                    );
+                    updateModelState();
+                    String detail = "Import failed: " + error.getClass().getSimpleName()
+                            + ": " + error.getMessage();
+                    String message;
+                    if (modelReady) {
+                        message = "Model update failed; the existing model is still available. "
+                                + detail;
+                    } else {
+                        modelStatus.setText("Model setup failed");
+                        message = detail;
+                    }
+                    statusView.setText(message);
+                    if (!hasGeneratedImage()) {
+                        resultCaption.setText(message);
+                    }
                 });
             }
         });
     }
 
-    private LinearLayout createResultCard() {
-        LinearLayout card = card();
-        card.setPadding(0, 0, 0, dp(17));
-
-        LinearLayout authorRow = new LinearLayout(this);
-        authorRow.setOrientation(LinearLayout.HORIZONTAL);
-        authorRow.setGravity(Gravity.CENTER_VERTICAL);
-        authorRow.setPadding(dp(17), dp(16), dp(17), dp(14));
-        card.addView(authorRow);
-
-        authorRow.addView(avatar("TS", PRIMARY, 38), new LinearLayout.LayoutParams(dp(38), dp(38)));
-
-        LinearLayout authorText = new LinearLayout(this);
-        authorText.setOrientation(LinearLayout.VERTICAL);
-        authorText.setPadding(dp(10), 0, 0, 0);
-        authorRow.addView(authorText);
-
-        TextView author = text("TinySD Studio", 15, TEXT);
-        author.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
-        authorText.addView(author);
-        authorText.addView(text("Generated privately on this device", 12, MUTED), matchWrap(dp(1)));
-
-        imageView = new ImageView(this);
-        imageView.setAdjustViewBounds(true);
-        imageView.setScaleType(ImageView.ScaleType.CENTER_CROP);
-        imageView.setBackgroundColor(Color.rgb(232, 229, 238));
-        imageView.setMinimumHeight(dp(320));
-        card.addView(imageView, new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT
-        ));
-
-        resultCaption = text("", 15, TEXT);
-        resultCaption.setLineSpacing(0, 1.15f);
-        resultCaption.setPadding(dp(17), dp(15), dp(17), 0);
-        card.addView(resultCaption);
-
-        resultMeta = text("", 12, MUTED);
-        resultMeta.setPadding(dp(17), dp(8), dp(17), 0);
-        card.addView(resultMeta);
-
-        View divider = new View(this);
-        divider.setBackgroundColor(BORDER);
-        LinearLayout.LayoutParams dividerParams = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                dp(1)
-        );
-        dividerParams.setMargins(dp(17), dp(15), dp(17), 0);
-        card.addView(divider, dividerParams);
-
-        TextView footer = text("512 × 512  •  ExecuTorch + XNNPACK", 12, PRIMARY_DARK);
-        footer.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
-        footer.setPadding(dp(17), dp(13), dp(17), 0);
-        card.addView(footer);
-
-        saveButton = new Button(this);
-        saveButton.setText("Save image");
-        saveButton.setTextColor(PRIMARY_DARK);
-        saveButton.setTextSize(14);
-        saveButton.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
-        saveButton.setAllCaps(false);
-        saveButton.setEnabled(false);
-        saveButton.setAlpha(0.55f);
-        saveButton.setBackground(roundedDrawable(Color.rgb(245, 242, 255), 16, 1, Color.rgb(211, 202, 255)));
-        saveButton.setOnClickListener(view -> openSaveImageDialog());
-        LinearLayout.LayoutParams saveParams = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                dp(48)
-        );
-        saveParams.setMargins(dp(17), dp(15), dp(17), 0);
-        card.addView(saveButton, saveParams);
-        return card;
-    }
-
     private void openSaveImageDialog() {
-        if (generatedBitmap == null || generatedBitmap.isRecycled()) {
+        if (!hasGeneratedImage()) {
             statusView.setText("Generate an image before saving it.");
             return;
         }
@@ -453,6 +290,7 @@ public final class MainActivity extends Activity {
             statusView.setText("The generated image is no longer available.");
             return;
         }
+
         setSaving(true);
         statusView.setText("Saving image…");
         executor.submit(() -> {
@@ -463,13 +301,16 @@ public final class MainActivity extends Activity {
                 output.flush();
                 runOnUiThread(() -> {
                     setSaving(false);
-                    statusView.setText("Image saved. Choose another prompt or seed to create a variation.");
+                    statusView.setText(
+                            "Image saved. Choose another prompt or seed to create a variation."
+                    );
                 });
             } catch (Throwable error) {
                 runOnUiThread(() -> {
                     setSaving(false);
                     statusView.setText(
-                            "Save failed: " + error.getClass().getSimpleName() + ": " + error.getMessage()
+                            "Save failed: " + error.getClass().getSimpleName()
+                                    + ": " + error.getMessage()
                     );
                 });
             }
@@ -479,8 +320,10 @@ public final class MainActivity extends Activity {
     private void startGeneration() {
         if (!memoryReady) {
             statusView.setText(memoryWarning());
+            resultCaption.setText(memoryWarning());
             return;
         }
+
         File modelFile = new File(modelDirectory, MODEL_NAME);
         File scheduleFile = new File(modelDirectory, SCHEDULE_NAME);
         File tokenizerFile = new File(modelDirectory, "tokenizer.json");
@@ -505,9 +348,9 @@ public final class MainActivity extends Activity {
 
         setGenerating(true);
         clearGeneratedImage();
-        resultCard.setVisibility(View.GONE);
         progressBar.setProgress(0);
         statusView.setText("Loading the tokenizer and TinySD model…");
+        resultCaption.setText("Loading the tokenizer and TinySD model…");
 
         executor.submit(() -> {
             try {
@@ -527,6 +370,7 @@ public final class MainActivity extends Activity {
                             progressBar.setMax(total);
                             progressBar.setProgress(completed);
                             statusView.setText(message);
+                            resultCaption.setText(message);
                         })
                 );
                 runOnUiThread(() -> {
@@ -539,11 +383,13 @@ public final class MainActivity extends Activity {
                             seed,
                             result.elapsedMs / 1000.0
                     ));
+                    resultMeta.setVisibility(View.VISIBLE);
+                    resultFooter.setVisibility(View.VISIBLE);
                     resultCard.setVisibility(View.VISIBLE);
-                    saveButton.setEnabled(true);
-                    saveButton.setAlpha(1.0f);
-                    statusView.setText("Image ready. Try another prompt or seed to create a new variation.");
                     setGenerating(false);
+                    statusView.setText(
+                            "Image ready. Try another prompt or seed to create a new variation."
+                    );
                 });
             } catch (OutOfMemoryError error) {
                 runOnUiThread(() -> showFailure(
@@ -551,79 +397,117 @@ public final class MainActivity extends Activity {
                 ));
             } catch (Throwable error) {
                 runOnUiThread(() -> showFailure(
-                        "Generation failed: " + error.getClass().getSimpleName() + ": " + error.getMessage()
+                        "Generation failed: " + error.getClass().getSimpleName()
+                                + ": " + error.getMessage()
                 ));
             }
         });
     }
 
     private void updateModelState() {
-        File modelFile = new File(modelDirectory, MODEL_NAME);
-        File scheduleFile = new File(modelDirectory, SCHEDULE_NAME);
-        File tokenizerFile = new File(modelDirectory, "tokenizer.json");
-        modelReady = modelFile.isFile() && scheduleFile.isFile() && tokenizerFile.isFile();
-        boolean canGenerate = modelReady && memoryReady && !generating && !importing && !saving;
-        generateButton.setEnabled(canGenerate);
-        generateButton.setAlpha(canGenerate ? 1.0f : 0.55f);
-        importButton.setVisibility(modelReady ? View.GONE : View.VISIBLE);
-        importButton.setEnabled(!importing);
+        modelReady = hasModelFiles();
+        importButton.setText(R.string.import_model);
+
         if (modelReady) {
+            modelStatus.setText(memoryReady ? "TinySD is ready" : "More device memory needed");
             statusView.setText(memoryReady
                     ? "Model ready. Enter a prompt and generate an image."
                     : memoryWarning());
         } else {
-            statusView.setText(
-                    "Model not installed. Import tinysd_vivo_executorch.zip to continue."
-            );
+            modelStatus.setText(R.string.model_setup_needed);
+            statusView.setText("Add tinysd_vivo_executorch.zip to continue.");
         }
+
+        if (!hasGeneratedImage() && !generating && !importing) {
+            if (modelReady && memoryReady) {
+                resultCaption.setText(
+                        "TinySD is ready. Enter a prompt and generate your first image."
+                );
+            } else if (modelReady) {
+                resultCaption.setText(memoryWarning());
+            } else {
+                resultCaption.setText(R.string.initial_instructions);
+            }
+        }
+        applyControlState();
+    }
+
+    private boolean hasModelFiles() {
+        return new File(modelDirectory, MODEL_NAME).isFile()
+                && new File(modelDirectory, SCHEDULE_NAME).isFile()
+                && new File(modelDirectory, "tokenizer.json").isFile();
     }
 
     private void showFailure(String message) {
         statusView.setText(message);
+        resultCaption.setText(message);
+        resultMeta.setVisibility(View.GONE);
+        resultFooter.setVisibility(View.GONE);
+        resultCard.setVisibility(View.GONE);
         setGenerating(false);
     }
 
     private void setGenerating(boolean value) {
         generating = value;
-        promptInput.setEnabled(!value);
-        seedInput.setEnabled(!value);
-        boolean canGenerate = modelReady && memoryReady && !value && !importing && !saving;
-        generateButton.setEnabled(canGenerate);
-        generateButton.setAlpha(value ? 0.65f : (canGenerate ? 1.0f : 0.55f));
-        generateButton.setText(value ? "Creating your image…" : "Generate image");
+        applyControlState();
     }
 
     private void setImporting(boolean value) {
         importing = value;
-        promptInput.setEnabled(!value);
-        seedInput.setEnabled(!value);
-        boolean canGenerate = modelReady && memoryReady && !value && !generating && !saving;
-        generateButton.setEnabled(canGenerate);
-        generateButton.setAlpha(canGenerate ? 1.0f : 0.55f);
-        importButton.setEnabled(!value);
-        importButton.setText(value ? "Importing model…" : "Import TinySD model");
+        applyControlState();
     }
 
     private void setSaving(boolean value) {
         saving = value;
-        promptInput.setEnabled(!value);
-        seedInput.setEnabled(!value);
-        boolean canGenerate = modelReady && memoryReady && !value && !generating && !importing;
-        generateButton.setEnabled(canGenerate);
-        generateButton.setAlpha(canGenerate ? 1.0f : 0.55f);
-        saveButton.setEnabled(!value && generatedBitmap != null && !generatedBitmap.isRecycled());
-        saveButton.setAlpha(saveButton.isEnabled() ? 1.0f : 0.55f);
-        saveButton.setText(value ? "Saving image…" : "Save image");
+        applyControlState();
+    }
+
+    private boolean isBusy() {
+        return generating || importing || saving;
+    }
+
+    private boolean hasGeneratedImage() {
+        return generatedBitmap != null && !generatedBitmap.isRecycled();
+    }
+
+    private void applyControlState() {
+        boolean busy = isBusy();
+        promptInput.setEnabled(!busy);
+        seedInput.setEnabled(!busy);
+        generateButton.setEnabled(modelReady && memoryReady && !busy);
+        importButton.setEnabled(!busy);
+        saveButton.setEnabled(hasGeneratedImage() && !busy);
+        progressBar.setVisibility(generating || importing ? View.VISIBLE : View.GONE);
+
+        generateButton.setText(generating
+                ? "Creating your image…"
+                : getString(R.string.generate_image));
+        importButton.setText(importing
+                ? "Setting up model…"
+                : getString(R.string.import_model));
+        saveButton.setText(saving
+                ? "Saving image…"
+                : getString(R.string.save_image));
     }
 
     private void clearGeneratedImage() {
         imageView.setImageDrawable(null);
-        if (generatedBitmap != null && !generatedBitmap.isRecycled()) {
+        if (hasGeneratedImage()) {
             generatedBitmap.recycle();
         }
         generatedBitmap = null;
-        saveButton.setEnabled(false);
-        saveButton.setAlpha(0.55f);
+        resultCard.setVisibility(View.GONE);
+        resultMeta.setVisibility(View.GONE);
+        resultFooter.setVisibility(View.GONE);
+        applyControlState();
+    }
+
+    private void resetModelRuntime() {
+        if (runner != null) {
+            runner.close();
+            runner = null;
+        }
+        tokenizer = null;
     }
 
     private long readDeviceMemoryBytes() {
@@ -644,68 +528,10 @@ public final class MainActivity extends Activity {
         );
     }
 
-    private LinearLayout card() {
-        LinearLayout card = new LinearLayout(this);
-        card.setOrientation(LinearLayout.VERTICAL);
-        card.setPadding(dp(18), dp(18), dp(18), dp(18));
-        card.setBackground(roundedDrawable(SURFACE, 22, 1, Color.rgb(238, 236, 242)));
-        card.setElevation(dp(2));
-        return card;
-    }
-
-    private TextView avatar(String value, int color, int sizeDp) {
-        TextView avatar = text(value, sizeDp > 40 ? 15 : 13, Color.WHITE);
-        avatar.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
-        avatar.setGravity(Gravity.CENTER);
-        avatar.setBackground(roundedDrawable(color, sizeDp, 0, Color.TRANSPARENT));
-        return avatar;
-    }
-
-    private TextView label(String value) {
-        TextView label = text(value, 11, PRIMARY_DARK);
-        label.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
-        label.setLetterSpacing(0.12f);
-        return label;
-    }
-
-    private GradientDrawable roundedDrawable(int fillColor, int radiusDp, int strokeDp, int strokeColor) {
-        GradientDrawable drawable = new GradientDrawable();
-        drawable.setColor(fillColor);
-        drawable.setCornerRadius(dp(radiusDp));
-        if (strokeDp > 0) {
-            drawable.setStroke(dp(strokeDp), strokeColor);
-        }
-        return drawable;
-    }
-
-    private TextView text(String value, int sizeSp, int color) {
-        TextView view = new TextView(this);
-        view.setText(value);
-        view.setTextSize(sizeSp);
-        view.setTextColor(color);
-        view.setGravity(Gravity.START);
-        return view;
-    }
-
-    private LinearLayout.LayoutParams matchWrap(int topMargin) {
-        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT
-        );
-        params.topMargin = topMargin;
-        return params;
-    }
-
-    private int dp(int value) {
-        return Math.round(value * getResources().getDisplayMetrics().density);
-    }
-
     @Override
     protected void onDestroy() {
         executor.shutdownNow();
-        if (runner != null) {
-            runner.close();
-        }
+        resetModelRuntime();
         super.onDestroy();
     }
 }

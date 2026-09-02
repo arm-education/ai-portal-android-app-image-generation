@@ -27,3 +27,5 @@ android {
 dependencies {
     implementation("org.pytorch:executorch-android:1.3.1")
 }
+
+apply(from = "generated-runtime-dependencies.gradle.kts")

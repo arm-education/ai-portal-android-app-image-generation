@@ -26,6 +26,12 @@ public final class CompatibleModelRegistry {
     }
 
     public static List<ModelDescriptor> models() {
-        return MODELS;
+        List<ModelDescriptor> generatedModels = GeneratedAdapterRegistry.models();
+        if (generatedModels.size() > 1) {
+            throw new IllegalStateException(
+                    "TinySD Studio supports one active generated model at a time"
+            );
+        }
+        return generatedModels.isEmpty() ? MODELS : generatedModels;
     }
 }

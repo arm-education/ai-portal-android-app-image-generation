@@ -13,7 +13,7 @@ from pathlib import Path
 DEFAULT_REPO_ID = "Arm/tiny-sd-int8-xnnpack-executorch-vivo-x300"
 DEFAULT_ARCHIVE_NAME = "tinysd_vivo_executorch.zip"
 ARTIFACTS = (
-    ("tiny-sd-int8-executorch.pte", "huggingface/optimized.pte"),
+    ("tiny-sd_vivo-x300_executorch_optimized.pte", "huggingface/optimized.pte"),
     ("schedule_data.json", "huggingface/schedule_data.json"),
     ("tokenizer/tokenizer.json", "tokenizer/tokenizer.json"),
 )

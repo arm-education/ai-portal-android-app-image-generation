@@ -92,7 +92,7 @@ The downloader retrieves only these files:
 
 | Repository file | Application role |
 | --- | --- |
-| `tiny-sd-int8-executorch.pte` | Multimethod ExecuTorch program containing `text_encoder`, `unet`, and `vae_decoder` |
+| `tiny-sd_vivo-x300_executorch_optimized.pte` | Multimethod ExecuTorch program containing `text_encoder`, `unet`, and `vae_decoder` |
 | `schedule_data.json` | Constants for the 25-step DPM-Solver++ denoising loop |
 | `tokenizer/tokenizer.json` | CLIP vocabulary and byte-pair encoding rules |
 
@@ -137,15 +137,26 @@ The remaining files separate the reusable application structure from the TinySD 
 - `ModelDescriptor.java` describes a supported package, including its model ID, adapter ID, archive name, runtime, storage directory, memory requirement, and required files.
 - `CompatibleModelRegistry.java` declares the model packages supported by the application. It currently contains one TinySD INT8 descriptor.
 - `AdapterRegistry.java` registers the adapters compiled into the APK and resolves a descriptor's adapter ID.
+- `GeneratedAdapterRegistry.java` is the empty build-time extension point for one reviewed generated adapter and model.
 - `ModelImporter.java` checks the required ZIP entries, sizes, and checksums in a staging directory before replacing the installed model files.
 - `ClipTokenizer.java` converts the prompt into the CLIP token sequence used by the text encoder.
 - `ScheduleData.java` loads the exported denoising constants.
 - `TinySdRunner.java` memory-maps the `.pte` program and runs the text encoder, denoising loop, and VAE decoder.
 - `download_model.py` downloads only the required Hugging Face artifacts and creates the import archive.
+- `adapter-generation/` contains the package inspection, coding-agent prompt, and generated-adapter file check used by the extension workflow.
+- `app/generated-runtime-dependencies.gradle.kts` isolates dependencies required by a generated adapter.
 
 The expected archive filename is displayed by the application and produced by `download_model.py`. The importer accepts an archive based on its required entries and checksums, rather than its selected filename. The ExecuTorch method contract is checked when the model is first loaded for generation.
 
 TinySD is exported as one multimethod ExecuTorch program. `TinySdRunner` calls `text_encoder` for the prompt and unconditional input, calls `unet` for conditioned and unconditioned predictions during each denoising step, and calls `vae_decoder` to create the final RGB image.
+
+## Use another model package
+
+Another model package can reuse `TinySdImageGenerationAdapter` only if it matches the complete TinySD execution contract: archive contents, tokenizer, scheduler data, ExecuTorch method names, tensor shapes, data types, image dimensions, and output format. A `.pte` filename alone does not make a model compatible.
+
+The application currently activates one registered descriptor. For a compatible package, replace the `ModelDescriptor` in `CompatibleModelRegistry.models()` and update `download_model.py` if the repository filenames or archive layout differ. The descriptor must reference an adapter already registered in `AdapterRegistry`; importing a model archive does not import application code.
+
+Create and register a separate adapter when a model changes the callable methods, tensor contract, tokenizer, scheduler, runtime, output format, or required user controls. Rebuild and test the APK on an Arm64 Android device after changing the integration.
 
 ## License
 

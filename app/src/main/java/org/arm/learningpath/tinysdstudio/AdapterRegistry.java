@@ -14,6 +14,9 @@ public final class AdapterRegistry implements AutoCloseable {
     public AdapterRegistry(Context context) {
         Map<String, ImageGenerationAdapter> registeredAdapters = new LinkedHashMap<>();
         register(registeredAdapters, new TinySdImageGenerationAdapter(context));
+        for (ImageGenerationAdapter adapter : GeneratedAdapterRegistry.adapters(context)) {
+            register(registeredAdapters, adapter);
+        }
         adapters = Collections.unmodifiableMap(registeredAdapters);
     }
 

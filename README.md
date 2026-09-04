@@ -1,6 +1,6 @@
 # TinySD Studio Android application
 
-This example application accompanies the [Arm Learning Path for running image generation models from the Arm AI Portal](https://learn.arm.com/learning-paths/mobile-graphics-and-gaming/ai-portal-tinysd-android). It is intended for learning how models run on devices and is not a reference production application. It is provided under the [Arm Education End User License Agreement](LICENSE.md).
+This example application accompanies the [Arm Learning Path for running image generation models from the Arm AI Portal](https://learn.arm.com/learning-paths/mobile-graphics-and-gaming/ai-portal-tinysd-android). It is intended for learning how models run on devices and is not a reference production application.
 
 TinySD Studio runs an Arm-optimized TinySD text-to-image model locally on an Arm64 Android phone or emulator. It uses ExecuTorch with XNNPACK to generate a 512 × 512 image from a text prompt. The prompt and image stay on the device during generation; **Save image** writes the PNG to the destination you choose in Android's document picker.
 

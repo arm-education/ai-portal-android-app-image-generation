@@ -2,7 +2,7 @@
 
 This example application accompanies the [Arm Learning Path for running image generation models from the Arm AI Portal](https://learn.arm.com/learning-paths/mobile-graphics-and-gaming/ai-portal-tinysd-android). It is intended for learning how models run on devices and is not a reference production application. It is provided under the [Arm Education End User License Agreement](LICENSE.md).
 
-TinySD Studio runs an Arm-optimized TinySD text-to-image model locally on an Arm64 Android phone or emulator. It uses ExecuTorch with XNNPACK to generate a 512 × 512 image from a text prompt. The prompt and generated image remain on the Android device.
+TinySD Studio runs an Arm-optimized TinySD text-to-image model locally on an Arm64 Android phone or emulator. It uses ExecuTorch with XNNPACK to generate a 512 × 512 image from a text prompt. The prompt and image stay on the device during generation; **Save image** writes the PNG to the destination you choose in Android's document picker.
 
 The application imports the model artifacts at run time, so the approximately 1 GB ExecuTorch program is not stored in the Android application package (APK).
 
@@ -21,7 +21,7 @@ The application imports the optimized model bundle, accepts a prompt and variati
 
 - Android Studio with Android SDK 35
 - Java 17, supplied by Android Studio
-- An Arm64 Android device running Android 9, API level 28, or later
+- An Arm64 Android device running Android 9 (API level 28) or later
 - At least 7 GB of memory exposed to the application; configure an Android Virtual Device (AVD) with 8192 MB of RAM
 - At least 3 GB of available storage while downloading and importing the model
 - Python 3 and the `huggingface_hub` package for the supplied model downloader
@@ -34,7 +34,7 @@ An x86-64 Android emulator cannot run this Arm64-only application. Use a physica
 | --- | --- | --- | --- |
 | TinySD INT8 | ExecuTorch with XNNPACK | [`Arm/tiny-sd-int8-xnnpack-executorch-vivo-x300`](https://huggingface.co/Arm/tiny-sd-int8-xnnpack-executorch-vivo-x300) | `tinysd_vivo_executorch.zip` |
 
-The repository contains both INT8 and FP32 ExecuTorch programs. The downloader packages only the smaller INT8 program and its required tokenizer and scheduler data for this application.
+The Hugging Face repository contains both INT8 and FP32 ExecuTorch programs. The downloader packages only the smaller INT8 program and its required tokenizer and scheduler data for this application.
 
 The application registers this package through `CompatibleModelRegistry.java` and runs it through the supplied `TinySdImageGenerationAdapter.java` adapter.
 
@@ -113,15 +113,15 @@ You can instead use Android Studio's **Device Explorer** to upload the archive t
 3. Wait for Gradle sync to finish.
 4. Connect an Arm64 Android phone or start a compatible Arm64 AVD.
 5. Select the `app` configuration and run it.
-6. Select **Import TinySD model** and choose `tinysd_vivo_executorch.zip` from **Downloads**.
+6. Select **Add or change model** and choose `tinysd_vivo_executorch.zip` from **Downloads**.
 7. Wait until the application reports **Model ready**.
-8. Enter a text prompt and a whole-number variation seed.
+8. Enter a text prompt and an integer variation seed.
 9. Select **Generate image**.
 10. Select **Save image** to save the generated PNG through Android's document picker.
 
 The seed controls the initial random noise. Reusing the same model, prompt, and seed reproduces the same image. Change the seed to create another variation of the prompt.
 
-The application extracts the required artifacts into its private app-specific storage. Clearing the application data or uninstalling the application removes the imported model. The original ZIP remains in the Android **Downloads** directory.
+The application extracts the required artifacts into app-specific storage, using external app-specific storage when available and internal storage as a fallback. Clearing the application data or uninstalling the application removes the imported model. The original ZIP remains in the Android **Downloads** directory.
 
 ## Application structure
 
